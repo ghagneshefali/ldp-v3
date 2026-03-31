@@ -1,0 +1,10 @@
+import axios from 'axios';
+const BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const api = axios.create({ baseURL: BASE });
+api.interceptors.request.use(c => { const t = localStorage.getItem('token'); if (t) c.headers.Authorization = `Bearer ${t}`; return c; });
+api.interceptors.response.use(r => r, e => Promise.reject(e));
+export const authApi = { register: d => api.post('/auth/register', d), login: d => api.post('/auth/login', d) };
+export const githubApi = { getRepo: url => api.get('/github/repo', { params: { url } }), getFiles: (url, path='') => api.get('/github/files', { params: { url, path } }), getFileContent: (url, fp) => api.get('/github/file-content', { params: { url, filePath: fp } }), searchRepos: q => api.get('/github/search', { params: { q } }) };
+export const aiApi = { modifyCode: d => api.post('/ai/modify', d), analyze: d => api.post('/ai/analyze', d) };
+export const deployApi = { trigger: d => api.post('/deploy/trigger', d), getStatus: id => api.get(`/deploy/status/${id}`), getLogs: id => api.get(`/deploy/logs/${id}`), getHistory: () => api.get('/deploy/history'), remove: id => api.delete(`/deploy/${id}`) };
+export default api;
