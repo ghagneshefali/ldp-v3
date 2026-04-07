@@ -57,6 +57,7 @@ export default function PipelinePage() {
   const [depStatus, setDepStatus] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loadingDeploy, setLoadingDeploy] = useState(false);
+  const [loadingDownload, setLoadingDownload] = useState(false);
   const [error, setError] = useState("");
   const logsRef = useRef(null);
 
@@ -123,8 +124,8 @@ export default function PipelinePage() {
     try {
       const { data } = await githubApi.searchRepos(searchQ);
       setSearchResults(data.results || []);
-    } catch {
-      setError("Search failed");
+    } catch (e) {
+      setError(e.response?.data?.error || "Search failed");
     } finally {
       setLoadingSearch(false);
     }
@@ -142,8 +143,8 @@ export default function PipelinePage() {
       const mod = { instruction, summary: data.summary, intent: data.intent, modifiedCode: data.modifiedCode, filename: data.filename };
       setAppliedMods((prev) => [...prev, mod]);
       setAiInstruction("");
-    } catch {
-      setError("AI modification failed");
+    } catch (e) {
+      setError(e.response?.data?.error || "AI modification failed");
     } finally {
       setLoadingAi(false);
     }
@@ -172,6 +173,43 @@ export default function PipelinePage() {
       setError("Deploy failed: " + (e.response?.data?.error || e.message));
     } finally {
       setLoadingDeploy(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!repoInfo) {
+      setError("Please fetch a repository first");
+      return;
+    }
+    setLoadingDownload(true);
+    setError("");
+    try {
+      const response = await deployApi.download({
+        repoUrl,
+        modifications: appliedMods
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      const repoNameStr = repoInfo.name || repoUrl.split("/").pop().replace(".git", "");
+      link.setAttribute("download", `modified-${repoNameStr}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      let errMsg = e.message;
+      if (e.response && e.response.data && e.response.data instanceof Blob) {
+         try {
+           const text = await e.response.data.text();
+           const json = JSON.parse(text);
+           errMsg = json.error || errMsg;
+         } catch(err) {}
+      }
+      setError("Download failed: " + errMsg);
+    } finally {
+      setLoadingDownload(false);
     }
   };
 
@@ -348,8 +386,8 @@ export default function PipelinePage() {
                     >
                       <div className="flex between center">
                         <div>
-                          <div className="sm bold">{r.fullName}</div>
-                          <div className="xs muted mt1">
+                          <div className="sm bold" style={{ color: "#f8fafc" }}>{r.fullName}</div>
+                          <div className="xs mt1" style={{ color: "#94a3b8" }}>
                             {r.description || "No description"}
                           </div>
                           <div className="flex gap2 mt1 wrap">
@@ -686,7 +724,7 @@ export default function PipelinePage() {
                   <button
                     className="btn btn-success"
                     onClick={handleDeploy}
-                    disabled={loadingDeploy}
+                    disabled={loadingDeploy || loadingDownload}
                     style={{ flex: 1, justifyContent: "center", padding: 10 }}
                   >
                     {loadingDeploy ? (
@@ -702,10 +740,15 @@ export default function PipelinePage() {
                   </button>
                   <button
                     className="btn btn-purple"
-                    onClick={() => setTab("ai")}
-                    style={{ justifyContent: "center" }}
+                    onClick={handleDownload}
+                    disabled={loadingDownload || loadingDeploy}
+                    style={{ justifyContent: "center", padding: 10 }}
                   >
-                    <i className="bi bi-cpu"></i> Modify with AI First
+                    {loadingDownload ? (
+                      <><span className="spin"></span> Zipping...</>
+                    ) : (
+                      <><i className="bi bi-download"></i> Download Code</>
+                    )}
                   </button>
                 </div>
               </div>
@@ -921,24 +964,41 @@ export default function PipelinePage() {
 
                 {/* Deploy with AI changes */}
                 {appliedMods.length > 0 && (
-                  <button
-                    className="btn btn-success mt3 w100"
-                    onClick={handleDeploy}
-                    disabled={loadingDeploy}
-                    style={{ justifyContent: "center", padding: 10 }}
-                  >
-                    {loadingDeploy ? (
-                      <>
-                        <span className="spin"></span> Starting...
-                      </>
-                    ) : (
-                      <>
-                        <i className="bi bi-rocket-takeoff"></i> Deploy with{" "}
-                        {appliedMods.length} AI Change
-                        {appliedMods.length > 1 ? "s" : ""}
-                      </>
-                    )}
-                  </button>
+                  <div className="flex gap2 mt3 w100">
+                    <button
+                      className="btn btn-success"
+                      onClick={handleDeploy}
+                      disabled={loadingDeploy || loadingDownload}
+                      style={{ flex: 1, justifyContent: "center", padding: 10 }}
+                    >
+                      {loadingDeploy ? (
+                        <>
+                          <span className="spin"></span> Starting...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-rocket-takeoff"></i> Deploy 
+                          ({appliedMods.length})
+                        </>
+                      )}
+                    </button>
+                    <button
+                      className="btn btn-purple"
+                      onClick={handleDownload}
+                      disabled={loadingDownload || loadingDeploy}
+                      style={{ flex: 1, justifyContent: "center", padding: 10 }}
+                    >
+                      {loadingDownload ? (
+                        <>
+                          <span className="spin"></span> Zipping...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-download"></i> Download ZIP
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -987,7 +1047,7 @@ export default function PipelinePage() {
                         }}
                       >
                         <div className="xs muted">{k}</div>
-                        <div className="mono xs mt1 bold">{v}</div>
+                        <div className="mono xs mt1 bold" style={{ color: "var(--text)" }}>{v}</div>
                       </div>
                     ))}
                   </div>
@@ -1048,22 +1108,35 @@ export default function PipelinePage() {
                 </div>
 
                 {depStatus?.status === "SUCCESS" && (
-                  <button
-                    className="btn btn-ghost mt2"
-                    onClick={() => {
-                      setDeployId(null);
-                      setDepStatus(null);
-                      setLogs([]);
-                      setRepoInfo(null);
-                      setRepoUrl("");
-                      setAiResult(null);
-                      setAppliedMods([]);
-                      setAiSuggestions([]);
-                      setTab("github");
-                    }}
-                  >
-                    <i className="bi bi-plus"></i> New Deployment
-                  </button>
+                  <div className="flex gap2 mt2">
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        setDeployId(null);
+                        setDepStatus(null);
+                        setLogs([]);
+                        setRepoInfo(null);
+                        setRepoUrl("");
+                        setAiResult(null);
+                        setAppliedMods([]);
+                        setAiSuggestions([]);
+                        setTab("github");
+                      }}
+                    >
+                      <i className="bi bi-plus"></i> New Deployment
+                    </button>
+                    <button
+                      className="btn btn-purple"
+                      onClick={handleDownload}
+                      disabled={loadingDownload}
+                    >
+                      {loadingDownload ? (
+                        <><span className="spin"></span> Zipping...</>
+                      ) : (
+                        <><i className="bi bi-download"></i> Download Code (ZIP)</>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             )}

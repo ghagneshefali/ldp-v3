@@ -2,13 +2,13 @@ const axios = require("axios");
 const deployments = new Map();
 
 const STAGES = [
-  { stage: "INITIALIZING", duration: 800, log: "🔧 Initializing deployment pipeline..." },
-  { stage: "CLONING", duration: 1200, log: "📥 Cloning repository from GitHub..." },
-  { stage: "DETECTING", duration: 1000, log: "🔍 Auto-detecting project type..." },
-  { stage: "APPLYING_MODS", duration: 1500, log: "🤖 Applying AI modifications..." },
-  { stage: "BUILDING", duration: 2500, log: "🏗️ Building project..." },
-  { stage: "DEPLOYING", duration: 3000, log: "🚀 Deploying to Render..." },
-  { stage: "HEALTH_CHECK", duration: 2000, log: "❤️ Running health checks..." },
+  { stage: "INITIALIZING", duration: 300, log: "🔧 Initializing deployment pipeline..." },
+  { stage: "CLONING", duration: 400, log: "📥 Cloning repository from GitHub..." },
+  { stage: "DETECTING", duration: 400, log: "🔍 Auto-detecting project type..." },
+  { stage: "APPLYING_MODS", duration: 500, log: "🤖 Applying AI modifications..." },
+  { stage: "BUILDING", duration: 800, log: "🏗️ Building project..." },
+  { stage: "DEPLOYING", duration: 1000, log: "🚀 Deploying to Render..." },
+  { stage: "HEALTH_CHECK", duration: 600, log: "❤️ Running health checks..." },
   { stage: "DONE", duration: 0, log: "✅ Deployment complete!" },
 ];
 
@@ -43,7 +43,9 @@ const getCommands = async (repoUrl, logs) => {
          const pyStart = "if [ -f main.py ]; then gunicorn main:app; elif [ -f app.py ]; then gunicorn app:app; else python $(ls -1 *.py | head -n 1); fi";
          return { build: "pip install -r requirements.txt && pip install gunicorn", start: pyStart, env: "python", rootDir: "" };
       }
-      logs.push(`[${ts()}] ❌ Invalid Project: Missing package.json or requirements.txt. Only Web Apps are supported!`);
+      logs.push(`[${ts()}] ❌ Invalid Project: Missing package.json or requirements.txt.`);
+      logs.push(`[${ts()}] 💡 Your Live Deployment Pipeline is designed specifically to deploy Web Applications (like Node.js, React apps, Express APIs, or Python backend servers) to Render.`);
+      logs.push(`[${ts()}] ⚠️ You cannot host an Android or iOS app codebase on a backend web server like Render. It won't run because it's an app, not a website!`);
       throw new Error("unsupported_project");
     }
 
@@ -129,25 +131,39 @@ const deployToRender = async (apiKey, repoUrl, repoName, branch, commands, logs)
 
   // Poll for status
   let attempts = 0;
-  while (attempts < 9) {
-    await new Promise(r => setTimeout(r, 5000));
+  while (attempts < 30) {
+    await new Promise(r => setTimeout(r, 6000));
     attempts++;
     try {
       const sr = await api.get(`/services/${service.id}/deploys`);
       const latest = sr.data?.[0]?.deploy;
       if (latest) {
-        logs.push(`[${ts()}] 📊 Build status: ${latest.status}`);
+        if (latest.status === "build_in_progress") {
+          if (attempts % 3 === 0) {
+             logs.push(`[${ts()}] ⏳ Cloud Build running (Render Free Tier can take 2-3 minutes)...`);
+          }
+        } else if (latest.status !== "live" && latest.status !== "build_failed" && latest.status !== "update_failed" && latest.status !== "canceled") {
+          logs.push(`[${ts()}] 📊 Build status: ${latest.status}`);
+        }
+
         if (latest.status === "live") {
           const url = `https://${service.name}.onrender.com`;
           logs.push(`[${ts()}] 🌐 LIVE URL: ${url}`);
           return url;
         }
         if (latest.status === "build_failed") {
-          logs.push(`[${ts()}] ❌ Build failed — check repo has correct start script`);
+          logs.push(`[${ts()}] ❌ Build failed on Render Cloud.`);
+          logs.push(`[${ts()}] 💡 Here is why this usually happens:`);
+          logs.push(`[${ts()}] 1️⃣ You tried to deploy a massive library/framework (like Babylon.js, Botkit, etc.) instead of a standalone Web App. Libraries do not contain servers.`);
+          logs.push(`[${ts()}] 2️⃣ The repository exhausted Render's Free Tier limits (512MB RAM) during 'npm install'.`);
+          logs.push(`[${ts()}] 3️⃣ The repository is missing critical build environment variables.`);
+          logs.push(`[${ts()}] 👉 Action: Please search for smaller, self-contained apps (e.g., 'express todo', 'react chat app').`);
           throw new Error("build_failed");
         }
         if (latest.status === "update_failed" || latest.status === "canceled") {
-          logs.push(`[${ts()}] ❌ Update failed — your app probably crashed on start or didn't use process.env.PORT!`);
+          logs.push(`[${ts()}] ❌ Backend Application Crashed.`);
+          logs.push(`[${ts()}] 💡 The server successfully built, but immediately crashed upon starting.`);
+          logs.push(`[${ts()}] 👉 Usually, this means the app is throwing an error in 'index.js' (e.g., missing MongoDB URI) or it refused to bind to 'process.env.PORT'.`);
           throw new Error("update_failed");
         }
       }
@@ -209,6 +225,7 @@ const deployService = {
               d.status = "FAILED";
               d.error = "❌ Deployment Halted: Unsupported Project Type.";
               d.logs.push(`[${new Date().toISOString()}] 🛑 Reason: Not a recognizable Web Web app (No package.json or requirements.txt found)`);
+              d.logs.push(`[${new Date().toISOString()}] 💡 Reminder: You cannot host an Android or iOS app codebase on a backend web server like Render. It won't run because it's an app, not a website!`);
               deployments.set(deployId, d);
               return; 
            }

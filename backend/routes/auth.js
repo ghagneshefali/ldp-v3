@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const users = [];
 
-const makeToken = (id) => jwt.sign({ userId: id }, process.env.JWT_SECRET || "dev_secret", { expiresIn: "7d" });
+const makeToken = (id) => jwt.sign({ userId: id }, process.env.JWT_SECRET || "dev_secret", { expiresIn: "2h" });
 
 router.post("/register", async (req, res) => {
   try {

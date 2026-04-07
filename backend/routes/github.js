@@ -104,16 +104,24 @@ router.get("/file-content", async (req, res) => {
 
 router.get("/search", async (req, res) => {
   try {
-    const { data } = await gh.get("/search/repositories", { params: { q: req.query.q, sort: "stars", order: "desc", per_page: 10 } });
+    const { data } = await gh.get("/search/repositories", { params: { q: req.query.q, sort: "stars", order: "desc", per_page: 30 } });
+    const excludedLangs = ['java', 'kotlin', 'swift', 'objective-c', 'dart', 'c++', 'c', 'c#'];
+    const filteredItems = data.items.filter(r => !r.language || !excludedLangs.includes(r.language.toLowerCase())).slice(0, 10);
     res.json({
-      success: true, results: data.items.map(r => ({
+      success: true, results: filteredItems.map(r => ({
         id: r.id, name: r.name, fullName: r.full_name, description: r.description,
         url: r.html_url, language: r.language, stars: r.stargazers_count,
         forks: r.forks_count, topics: r.topics || [],
         owner: { login: r.owner.login, avatarUrl: r.owner.avatar_url },
       }))
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    if (e.response?.status === 403 && e.response?.headers?.['x-ratelimit-remaining'] === '0') {
+      res.status(429).json({ error: "GitHub search rate limit exceeded. Please add a GITHUB_TOKEN to your backend/.env to increase the limit." });
+    } else {
+      res.status(500).json({ error: e.response?.data?.message || e.message }); 
+    }
+  }
 });
 
 module.exports = router;

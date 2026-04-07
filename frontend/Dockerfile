@@ -1,8 +1,7 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
-RUN npm install ajv@^8.0.0 --legacy-peer-deps
+RUN npm install
 COPY . .
 ENV CI=false
 RUN npm run build

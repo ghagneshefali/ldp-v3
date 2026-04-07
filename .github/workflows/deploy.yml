@@ -32,8 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - run: npm install --legacy-peer-deps
-      - run: npm install ajv@^8.0.0 --legacy-peer-deps
+      - run: npm install
       - run: npm run build
         env:
           CI: false
@@ -45,9 +44,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: 🚀 Trigger Render Deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets['RENDER_DEPLOY_HOOK_URL'] }}
         run: |
-          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
-            curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            curl -X POST "$RENDER_DEPLOY_HOOK_URL"
             echo "✅ Deployed!"
           else
             echo "ℹ️ Add RENDER_DEPLOY_HOOK_URL to GitHub secrets"
